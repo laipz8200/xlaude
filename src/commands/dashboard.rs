@@ -39,6 +39,7 @@ pub struct Dashboard {
     config_mode: bool,
     config_editor_input: String,
     last_key_event: Option<(KeyEvent, std::time::Instant)>, // Track last key event for deduplication
+    last_key: Option<KeyCode>,                              // Track last key for 'gg' sequence
 }
 
 struct WorktreeDisplay {
@@ -75,6 +76,7 @@ impl Dashboard {
             config_mode: false,
             config_editor_input: String::new(),
             last_key_event: None,
+            last_key: None,
         };
 
         dashboard.refresh_worktrees();
@@ -429,12 +431,15 @@ impl Dashboard {
 
         match key.code {
             KeyCode::Char('q' | 'Q') => {
+                self.last_key = None;
                 return Ok(InputResult::Exit);
             }
             KeyCode::Char('?' | 'h') => {
                 self.show_help = true;
+                self.last_key = None;
             }
             KeyCode::Up | KeyCode::Char('k') => {
+                self.last_key = None;
                 // Move up, skipping repository headers
                 if self.selected > 0 {
                     let mut prev = self.selected - 1;
@@ -453,6 +458,7 @@ impl Dashboard {
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
+                self.last_key = None;
                 // Move down, skipping repository headers
                 let mut next = self.selected + 1;
                 while next < self.list_index_map.len() {
@@ -465,7 +471,35 @@ impl Dashboard {
                     next += 1;
                 }
             }
+            KeyCode::Char('g') => {
+                // Check if last key was also 'g' for 'gg' command
+                if matches!(self.last_key, Some(KeyCode::Char('g'))) {
+                    // Go to the first selectable item
+                    for idx in 0..self.list_index_map.len() {
+                        if self.list_index_map[idx].is_some() {
+                            self.selected = idx;
+                            self.list_state.select(Some(self.selected));
+                            break;
+                        }
+                    }
+                    self.last_key = None; // Reset after executing 'gg'
+                } else {
+                    self.last_key = Some(key.code);
+                }
+            }
+            KeyCode::Char('G') => {
+                self.last_key = None;
+                // Go to the last selectable item
+                for idx in (0..self.list_index_map.len()).rev() {
+                    if self.list_index_map[idx].is_some() {
+                        self.selected = idx;
+                        self.list_state.select(Some(self.selected));
+                        break;
+                    }
+                }
+            }
             KeyCode::Enter => {
+                self.last_key = None;
                 // Get the actual worktree index from the mapping
                 if let Some(Some(worktree_idx)) = self.list_index_map.get(self.selected)
                     && let Some(worktree) = self.worktrees.get(*worktree_idx)
@@ -474,6 +508,7 @@ impl Dashboard {
                 }
             }
             KeyCode::Char('n' | 'N') => {
+                self.last_key = None;
                 // Enter create mode with dialog
                 self.create_mode = true;
                 self.create_input.clear();
@@ -489,6 +524,7 @@ impl Dashboard {
                 }
             }
             KeyCode::Char('d' | 'D') => {
+                self.last_key = None;
                 // Get the actual worktree index from the mapping
                 if let Some(Some(worktree_idx)) = self.list_index_map.get(self.selected)
                     && let Some(worktree) = self.worktrees.get(*worktree_idx)
@@ -501,14 +537,19 @@ impl Dashboard {
                 }
             }
             KeyCode::Char('r' | 'R') => {
+                self.last_key = None;
                 self.refresh()?;
             }
             KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.last_key = None;
                 // Enter config mode
                 self.config_mode = true;
                 self.config_editor_input = self.state.editor.clone().unwrap_or_default();
             }
-            _ => {}
+            _ => {
+                // Reset last_key for any other key that isn't 'g'
+                self.last_key = None;
+            }
         }
 
         Ok(InputResult::Continue)
@@ -834,6 +875,16 @@ impl Dashboard {
                 Span::raw("  "),
                 Span::styled("↓/j", Style::default().fg(Color::Yellow)),
                 Span::raw("    Move down"),
+            ]),
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled("gg", Style::default().fg(Color::Yellow)),
+                Span::raw("     Go to first item"),
+            ]),
+            Line::from(vec![
+                Span::raw("  "),
+                Span::styled("G", Style::default().fg(Color::Yellow)),
+                Span::raw("      Go to last item"),
             ]),
             Line::from(vec![
                 Span::raw("  "),
