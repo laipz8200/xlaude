@@ -1,0 +1,48 @@
+name: Sync with Upstream
+
+on:
+  schedule:
+    # Run weekly on Sundays at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+      
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/Xuanwo/xlaude.git || true
+          git remote -v
+      
+      - name: Fetch upstream changes
+        run: git fetch upstream
+      
+      - name: Merge upstream/main into main
+        run: |
+          git checkout main
+          git merge upstream/main --no-edit
+          git push origin main
+      
+      - name: Rebase main-custom on updated main
+        run: |
+          git checkout main-custom
+          git rebase main || {
+            echo "::warning::Rebase failed. Manual intervention required."
+            git rebase --abort
+            exit 1
+          }
+          git push origin main-custom --force-with-lease
