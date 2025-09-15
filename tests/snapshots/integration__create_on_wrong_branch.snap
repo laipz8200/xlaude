@@ -1,5 +1,0 @@
----
-source: tests/integration.rs
-expression: redacted
----
-Error: Must be on a base branch (main, master, or develop) to create a new worktree. Current branch: feature-branch

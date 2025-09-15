@@ -56,24 +56,7 @@ pub fn handle_create_in_dir_quiet(
         get_repo_name().context("Not in a git repository")?
     };
 
-    // Only check base branch if no repo_path is provided (i.e., running from CLI in current directory)
-    // When called from dashboard with a specific repo_path, we don't need this check
-    // as we'll create the worktree from the default branch
-    if repo_path.is_none() {
-        let current_branch = exec_git(&["branch", "--show-current"])?;
-        let default_branch = exec_git(&["symbolic-ref", "refs/remotes/origin/HEAD"])
-            .ok()
-            .and_then(|s| s.strip_prefix("refs/remotes/origin/").map(String::from))
-            .unwrap_or_else(|| "main".to_string());
-
-        let base_branches = ["main", "master", "develop", &default_branch];
-        if !base_branches.contains(&current_branch.as_str()) {
-            anyhow::bail!(
-                "Must be on a base branch (main, master, or develop) to create a new worktree. Current branch: {}",
-                current_branch
-            );
-        }
-    }
+    // No branch restriction - allow creating worktree from any branch
 
     // Get name from CLI args or pipe, generate if not provided
     let branch_name = match get_command_arg(name)? {
