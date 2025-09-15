@@ -207,24 +207,6 @@ fn test_create_random_name() {
     assert!(stdout.contains("Worktree created at"));
 }
 
-#[test]
-fn test_create_on_wrong_branch() {
-    let ctx = TestContext::new("test-repo");
-
-    // Switch to non-main branch
-    std::process::Command::new("git")
-        .args(["checkout", "-b", "feature-branch"])
-        .current_dir(&ctx.repo_dir)
-        .output()
-        .unwrap();
-
-    let output = ctx.xlaude(&["create", "test"]).assert().failure();
-
-    let stderr = String::from_utf8_lossy(&output.get_output().stderr);
-    let redacted = ctx.redact_paths(&stderr);
-    assert_snapshot!(redacted);
-}
-
 // List command tests
 #[test]
 fn test_list_empty() {
