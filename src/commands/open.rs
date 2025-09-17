@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use colored::Colorize;
-use std::process::{Command, Stdio};
 
+use crate::commands::agent_launcher::launch_with_menu;
 use crate::git::{get_current_branch, get_repo_name, is_base_branch, is_in_worktree};
-use crate::input::{drain_stdin, get_command_arg, is_piped_input, smart_confirm, smart_select};
+use crate::input::{get_command_arg, is_piped_input, smart_confirm, smart_select};
 use crate::state::{WorktreeInfo, XlaudeState};
-use crate::utils::resolve_agent_command;
 use crate::utils::sanitize_branch_name;
 
 pub fn handle_open(name: Option<String>) -> Result<()> {
@@ -32,14 +31,8 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
             // Check if this worktree is already managed
             let key = XlaudeState::make_key(&repo_name, &worktree_name);
 
-            if state.worktrees.contains_key(&key) {
-                // Already managed, open directly
-                println!(
-                    "{} Opening current worktree '{}/{}'...",
-                    "🚀".green(),
-                    repo_name,
-                    worktree_name.cyan()
-                );
+            let worktree_info = if let Some(info) = state.worktrees.get(&key).cloned() {
+                info
             } else {
                 // Not managed, ask if user wants to add it
                 println!(
@@ -84,32 +77,20 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
                 state.save()?;
 
                 println!("{} Worktree added successfully", "✅".green());
-                println!(
-                    "{} Opening worktree '{}/{}'...",
-                    "🚀".green(),
+                state.worktrees.get(&key).cloned().unwrap_or(WorktreeInfo {
+                    name: worktree_name,
+                    branch: current_branch,
+                    path: current_dir,
                     repo_name,
-                    worktree_name.cyan()
-                );
-            }
+                    created_at: Utc::now(),
+                })
+            };
 
-            // Launch agent in current directory
-            let (program, args) = resolve_agent_command()?;
-            let mut cmd = Command::new(&program);
-            cmd.args(&args);
-
-            cmd.envs(std::env::vars());
-
-            // If there's piped input, drain it and don't pass to Claude
-            if is_piped_input() {
-                drain_stdin()?;
-                cmd.stdin(Stdio::null());
-            }
-
-            let status = cmd.status().context("Failed to launch agent")?;
-
-            if !status.success() {
-                anyhow::bail!("Agent exited with error");
-            }
+            let _ = launch_with_menu(
+                &worktree_info,
+                "Select an agent to open the current worktree with:",
+            )
+            .context("Failed to launch agent")?;
 
             return Ok(());
         }
@@ -151,37 +132,8 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
         }
     };
 
-    let worktree_name = &worktree_info.name;
-
-    println!(
-        "{} Opening worktree '{}/{}'...",
-        "🚀".green(),
-        worktree_info.repo_name,
-        worktree_name.cyan()
-    );
-
-    // Change to worktree directory and launch Claude
-    std::env::set_current_dir(&worktree_info.path).context("Failed to change directory")?;
-
-    // Resolve global agent command
-    let (program, args) = resolve_agent_command()?;
-    let mut cmd = Command::new(&program);
-    cmd.args(&args);
-
-    // Inherit all environment variables
-    cmd.envs(std::env::vars());
-
-    // If there's piped input, drain it and don't pass to Claude
-    if is_piped_input() {
-        drain_stdin()?;
-        cmd.stdin(Stdio::null());
-    }
-
-    let status = cmd.status().context("Failed to launch agent")?;
-
-    if !status.success() {
-        anyhow::bail!("Agent exited with error");
-    }
+    let _ = launch_with_menu(&worktree_info, "Select an agent to open the worktree with:")
+        .context("Failed to launch agent")?;
 
     Ok(())
 }

@@ -63,8 +63,12 @@ pub fn resolve_agent_command() -> Result<(String, Vec<String>)> {
         .clone()
         .unwrap_or_else(crate::state::get_default_agent);
 
-    // Use shell-style splitting to handle quotes and spaces.
-    let parts = shell_words::split(&cmdline)
+    split_command_line(&cmdline)
+}
+
+/// Split a command line string into executable and arguments using shell-style parsing.
+pub fn split_command_line(cmdline: &str) -> Result<(String, Vec<String>)> {
+    let parts = shell_words::split(cmdline)
         .map_err(|e| anyhow::anyhow!("Invalid agent command: {} ({e})", cmdline))?;
 
     if parts.is_empty() {

@@ -4,11 +4,12 @@ use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::commands::open::handle_open;
+use crate::commands::agent_launcher::launch_with_menu;
+use crate::commands::agent_prompt::AgentSelection;
 use crate::git::{
     execute_git, extract_repo_name_from_url, get_repo_name, list_worktrees, update_submodules,
 };
-use crate::input::{get_command_arg, smart_confirm};
+use crate::input::get_command_arg;
 use crate::state::{WorktreeInfo, XlaudeState};
 use crate::utils::{generate_random_name, sanitize_branch_name};
 
@@ -55,8 +56,6 @@ pub fn handle_create_in_dir_quiet(
     } else {
         get_repo_name().context("Not in a git repository")?
     };
-
-    // No branch restriction - allow creating worktree from any branch
 
     // Get name from CLI args or pipe, generate if not provided
     let branch_name = match get_command_arg(name)? {
@@ -227,16 +226,15 @@ pub fn handle_create_in_dir_quiet(
     // Save state
     let mut state = XlaudeState::load()?;
     let key = XlaudeState::make_key(&repo_name, &worktree_name);
-    state.worktrees.insert(
-        key,
-        WorktreeInfo {
-            name: worktree_name.clone(),
-            branch: branch_name.clone(),
-            path: worktree_path.clone(),
-            repo_name,
-            created_at: Utc::now(),
-        },
-    );
+    let worktree_info = WorktreeInfo {
+        name: worktree_name.clone(),
+        branch: branch_name.clone(),
+        path: worktree_path.clone(),
+        repo_name,
+        created_at: Utc::now(),
+    };
+
+    state.worktrees.insert(key, worktree_info.clone());
     state.save()?;
 
     if !quiet {
@@ -249,9 +247,7 @@ pub fn handle_create_in_dir_quiet(
 
     // Ask if user wants to open the worktree (skip in quiet mode)
     if !quiet {
-        // Skip opening in test mode or when explicitly disabled
-        let should_open = if std::env::var("XLAUDE_TEST_MODE").is_ok()
-            || std::env::var("XLAUDE_NO_AUTO_OPEN").is_ok()
+        if std::env::var("XLAUDE_TEST_MODE").is_ok() || std::env::var("XLAUDE_NO_AUTO_OPEN").is_ok()
         {
             println!(
                 "  {} To open it, run: {} {}",
@@ -259,20 +255,20 @@ pub fn handle_create_in_dir_quiet(
                 "xlaude open".cyan(),
                 worktree_name.cyan()
             );
-            false
         } else {
-            smart_confirm("Would you like to open the worktree now?", true)?
-        };
+            let selection =
+                launch_with_menu(&worktree_info, "Would you like to open the worktree now?")
+                    .context("Failed to launch agent")?;
 
-        if should_open {
-            handle_open(Some(worktree_name.clone()))?;
-        } else if std::env::var("XLAUDE_NON_INTERACTIVE").is_err() {
-            println!(
-                "  {} To open it later, run: {} {}",
-                "💡".cyan(),
-                "xlaude open".cyan(),
-                worktree_name.cyan()
-            );
+            if selection == AgentSelection::Skip && std::env::var("XLAUDE_NON_INTERACTIVE").is_err()
+            {
+                println!(
+                    "  {} To open it later, run: {} {}",
+                    "💡".cyan(),
+                    "xlaude open".cyan(),
+                    worktree_name.cyan()
+                );
+            }
         }
     }
 

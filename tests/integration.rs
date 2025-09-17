@@ -602,23 +602,6 @@ fn test_mixed_format_migration() {
 }
 
 #[test]
-fn test_open_current_worktree_already_managed() {
-    let ctx = TestContext::new("test-repo");
-
-    // Create a worktree
-    ctx.xlaude(&["create", "feature-x"]).assert().success();
-
-    // Navigate to the worktree directory
-    let worktree_dir = ctx.temp_dir.path().join("test-repo-feature-x");
-
-    // Open from within the worktree - should open directly since it's already managed
-    ctx.xlaude_in_dir(&worktree_dir, &["open"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("Opening current worktree"));
-}
-
-#[test]
 fn test_open_current_worktree_not_managed() {
     let ctx = TestContext::new("test-repo");
 
