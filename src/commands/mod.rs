@@ -1,4 +1,6 @@
 pub mod add;
+pub mod agent_launcher;
+pub mod agent_prompt;
 pub mod clean;
 pub mod complete;
 pub mod create;
