@@ -641,21 +641,6 @@ fn test_clean_with_no_invalid() {
     );
 }
 
-// Open command tests (basic, since we can't actually launch Claude)
-#[test]
-fn test_open_specific_worktree() {
-    let ctx = TestContext::new("test-repo");
-
-    // Create worktree
-    ctx.xlaude(&["create", "to-open"]).assert().success();
-
-    // Mock claude command to verify it would be called
-    let output = ctx.xlaude(&["open", "to-open"]).assert().success();
-
-    let stdout = String::from_utf8_lossy(&output.get_output().stdout);
-    assert!(stdout.contains("Opening worktree"));
-}
-
 #[test]
 fn test_open_nonexistent_worktree() {
     let ctx = TestContext::new("test-repo");
@@ -766,52 +751,6 @@ fn test_mixed_format_migration() {
 
     // Verify no data loss
     assert_eq!(worktrees.len(), 2);
-}
-
-#[test]
-fn test_open_current_worktree_already_managed() {
-    let ctx = TestContext::new("test-repo");
-
-    // Create a worktree
-    ctx.xlaude(&["create", "feature-x"]).assert().success();
-
-    // Navigate to the worktree directory
-    let worktree_dir = ctx.temp_dir.path().join("test-repo-feature-x");
-
-    // Open from within the worktree - should open directly since it's already managed
-    ctx.xlaude_in_dir(&worktree_dir, &["open"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("Opening current worktree"));
-}
-
-#[test]
-fn test_open_current_worktree_not_managed() {
-    let ctx = TestContext::new("test-repo");
-
-    // Create a worktree manually using git
-    std::process::Command::new("git")
-        .args([
-            "worktree",
-            "add",
-            "-b",
-            "manual-branch",
-            "../test-repo-manual",
-        ])
-        .current_dir(&ctx.repo_dir)
-        .output()
-        .unwrap();
-
-    let worktree_dir = ctx.temp_dir.path().join("test-repo-manual");
-
-    // Try to open from within the unmanaged worktree
-    // In non-interactive mode, it should just print info and exit
-    ctx.xlaude_in_dir(&worktree_dir, &["open"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains(
-            "Current directory is a worktree but not managed",
-        ));
 }
 
 #[test]

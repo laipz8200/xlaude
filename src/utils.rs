@@ -59,13 +59,17 @@ where
 /// Resolve agent command from state or default, and split into program + args.
 pub fn resolve_agent_command() -> Result<(String, Vec<String>)> {
     let state = crate::state::XlaudeState::load()?;
-    let cmdline = state
+    let raw = state
         .agent
         .clone()
         .unwrap_or_else(crate::state::get_default_agent);
+    let cmdline = normalize_agent_command(&raw);
+    split_command_line(&cmdline)
+}
 
-    // Use shell-style splitting to handle quotes and spaces.
-    let parts = shell_words::split(&cmdline)
+/// Split a command line string into executable and arguments using shell-style parsing.
+pub fn split_command_line(cmdline: &str) -> Result<(String, Vec<String>)> {
+    let parts = shell_words::split(cmdline)
         .map_err(|e| anyhow::anyhow!("Invalid agent command: {} ({e})", cmdline))?;
 
     if parts.is_empty() {
@@ -75,6 +79,21 @@ pub fn resolve_agent_command() -> Result<(String, Vec<String>)> {
     let program = parts[0].clone();
     let args = parts[1..].to_vec();
     Ok((program, args))
+}
+
+/// Normalize common agent aliases to full commands.
+/// - "claude"  -> default Claude command (usually `claude --dangerously-skip-permissions`)
+/// - "gemini"  -> `gemini -y`
+/// - others are returned unchanged.
+pub fn normalize_agent_command(cmd: &str) -> String {
+    let trimmed = cmd.trim();
+    if trimmed.eq_ignore_ascii_case("claude") {
+        return crate::state::get_default_agent();
+    }
+    if trimmed.eq_ignore_ascii_case("gemini") {
+        return "gemini -y".to_string();
+    }
+    trimmed.to_string()
 }
 
 const CODEX_OPTIONS_WITH_VALUES: &[&str] = &[
@@ -236,6 +255,27 @@ mod tests {
                 assert_eq!(program, "codex");
                 assert_eq!(args, vec!["resume".to_string(), "session-123".to_string()]);
             },
+        );
+    }
+
+    #[test]
+    fn normalize_claude_aliases_to_default() {
+        assert_eq!(
+            normalize_agent_command("claude"),
+            crate::state::get_default_agent()
+        );
+    }
+
+    #[test]
+    fn normalize_gemini_alias_to_command() {
+        assert_eq!(normalize_agent_command("gemini"), "gemini -y");
+    }
+
+    #[test]
+    fn normalize_preserves_custom_commands() {
+        assert_eq!(
+            normalize_agent_command("codex --model claude-3.5"),
+            "codex --model claude-3.5"
         );
     }
 }

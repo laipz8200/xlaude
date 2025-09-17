@@ -1,5 +1,6 @@
 ---
 source: tests/integration.rs
-expression: "String::from_utf8_lossy(&output.get_output().stdout)"
+assertion_line: 220
+expression: redacted
 ---
 📭 No active worktrees
