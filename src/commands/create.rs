@@ -4,12 +4,12 @@ use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::commands::open::handle_open;
+use crate::commands::open::{handle_open, open_with_agent};
 use crate::git::{
     execute_git, extract_repo_name_from_url, get_repo_name, list_worktrees, update_submodules,
 };
-use crate::input::{get_command_arg, smart_confirm};
-use crate::state::{WorktreeInfo, XlaudeState};
+use crate::input::{get_command_arg, smart_choice};
+use crate::state::{WorktreeInfo, XlaudeState, get_default_agent};
 use crate::utils::{generate_random_name, sanitize_branch_name};
 
 pub fn handle_create(name: Option<String>) -> Result<()> {
@@ -55,8 +55,6 @@ pub fn handle_create_in_dir_quiet(
     } else {
         get_repo_name().context("Not in a git repository")?
     };
-
-    // No branch restriction - allow creating worktree from any branch
 
     // Get name from CLI args or pipe, generate if not provided
     let branch_name = match get_command_arg(name)? {
@@ -249,9 +247,7 @@ pub fn handle_create_in_dir_quiet(
 
     // Ask if user wants to open the worktree (skip in quiet mode)
     if !quiet {
-        // Skip opening in test mode or when explicitly disabled
-        let should_open = if std::env::var("XLAUDE_TEST_MODE").is_ok()
-            || std::env::var("XLAUDE_NO_AUTO_OPEN").is_ok()
+        if std::env::var("XLAUDE_TEST_MODE").is_ok() || std::env::var("XLAUDE_NO_AUTO_OPEN").is_ok()
         {
             println!(
                 "  {} To open it, run: {} {}",
@@ -259,22 +255,50 @@ pub fn handle_create_in_dir_quiet(
                 "xlaude open".cyan(),
                 worktree_name.cyan()
             );
-            false
         } else {
-            smart_confirm("Would you like to open the worktree now?", true)?
-        };
+            let agent_display = state.agent.clone().unwrap_or_else(get_default_agent);
 
-        if should_open {
-            handle_open(Some(worktree_name.clone()))?;
-        } else if std::env::var("XLAUDE_NON_INTERACTIVE").is_err() {
-            println!(
-                "  {} To open it later, run: {} {}",
-                "💡".cyan(),
-                "xlaude open".cyan(),
-                worktree_name.cyan()
-            );
+            match prompt_open_decision(&agent_display)? {
+                OpenDecision::Codex => {
+                    open_with_agent(&worktree_name, "codex")?;
+                }
+                OpenDecision::DefaultAgent => {
+                    handle_open(Some(worktree_name.clone()))?;
+                }
+                OpenDecision::Skip => {
+                    if std::env::var("XLAUDE_NON_INTERACTIVE").is_err() {
+                        println!(
+                            "  {} To open it later, run: {} {}",
+                            "💡".cyan(),
+                            "xlaude open".cyan(),
+                            worktree_name.cyan()
+                        );
+                    }
+                }
+            }
         }
     }
 
     Ok(worktree_name)
+}
+
+#[derive(Clone, Copy)]
+enum OpenDecision {
+    Codex,
+    DefaultAgent,
+    Skip,
+}
+
+fn prompt_open_decision(agent_display: &str) -> Result<OpenDecision> {
+    println!("Would you like to open the worktree now?");
+    println!("1. Open with `codex`.");
+    println!("2. Open with `{}`.", agent_display);
+    println!("n. Don't open.");
+
+    let choice = smart_choice("> ", &["1", "2", "n"], "n")?;
+    match choice.as_str() {
+        "1" => Ok(OpenDecision::Codex),
+        "2" => Ok(OpenDecision::DefaultAgent),
+        _ => Ok(OpenDecision::Skip),
+    }
 }

@@ -1,7 +1,9 @@
 use anyhow::Result;
 use atty::Stream;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use dialoguer::{Confirm, Select};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 use std::sync::Mutex;
 
 /// Check if stdin is piped (not a terminal)
@@ -157,4 +159,151 @@ pub fn drain_stdin() -> Result<()> {
     // tools like 'yes' that provide infinite input. The actual solution is
     // to not inherit stdin in child processes (using Stdio::null()).
     Ok(())
+}
+
+/// Read a single-choice input with support for piped input and defaults.
+/// Returns the canonical key from `valid_keys` that matches the user's selection.
+pub fn smart_choice(prompt: &str, valid_keys: &[&str], default_key: &str) -> Result<String> {
+    if !valid_keys
+        .iter()
+        .any(|key| key.eq_ignore_ascii_case(default_key))
+    {
+        anyhow::bail!(
+            "Default choice '{}' is not present in the list of valid options",
+            default_key
+        );
+    }
+
+    let normalized_keys: Vec<String> = valid_keys.iter().map(|key| key.to_lowercase()).collect();
+    let default_normalized = default_key.to_lowercase();
+
+    if let Some(input) = read_piped_line()? {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return Ok(default_key.to_string());
+        }
+
+        let normalized = trimmed.to_lowercase();
+        if let Some(index) = normalized_keys.iter().position(|key| key == &normalized) {
+            return Ok(valid_keys[index].to_string());
+        }
+
+        anyhow::bail!("Invalid selection: {}", trimmed);
+    }
+
+    if std::env::var("XLAUDE_NON_INTERACTIVE").is_ok() {
+        return Ok(valid_keys
+            .iter()
+            .find(|key| key.eq_ignore_ascii_case(default_key))
+            .unwrap()
+            .to_string());
+    }
+
+    let default_result = valid_keys
+        .iter()
+        .find(|key| key.eq_ignore_ascii_case(default_key))
+        .unwrap()
+        .to_string();
+
+    struct RawModeGuard;
+    impl Drop for RawModeGuard {
+        fn drop(&mut self) {
+            let _ = disable_raw_mode();
+        }
+    }
+
+    let raw_mode_enabled = enable_raw_mode().is_ok();
+    let _guard = raw_mode_enabled.then_some(RawModeGuard);
+
+    if !raw_mode_enabled {
+        return read_line_choice(prompt, &normalized_keys, valid_keys, &default_normalized);
+    }
+
+    if !prompt.is_empty() {
+        print!("{}", prompt);
+        io::stdout().flush()?;
+    }
+
+    loop {
+        match event::read()? {
+            Event::Key(key_event)
+                if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
+            {
+                match key_event.code {
+                    KeyCode::Char(c) => {
+                        if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                            && (c == 'c' || c == 'C')
+                        {
+                            println!();
+                            return Err(anyhow::anyhow!("Operation cancelled by Ctrl+C"));
+                        }
+
+                        let normalized = c.to_ascii_lowercase().to_string();
+                        if let Some(index) =
+                            normalized_keys.iter().position(|key| key == &normalized)
+                        {
+                            let selection = valid_keys[index].to_string();
+                            println!("{}", selection);
+                            io::stdout().flush()?;
+                            return Ok(selection);
+                        }
+                    }
+                    KeyCode::Enter => {
+                        println!();
+                        io::stdout().flush()?;
+                        return Ok(default_result);
+                    }
+                    KeyCode::Esc => {
+                        println!();
+                        io::stdout().flush()?;
+                        return Ok(default_result);
+                    }
+                    _ => {}
+                }
+
+                println!(
+                    "Invalid selection. Please choose from: {}",
+                    valid_keys.join(", ")
+                );
+                if !prompt.is_empty() {
+                    print!("{}", prompt);
+                    io::stdout().flush()?;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn read_line_choice(
+    prompt: &str,
+    normalized_keys: &[String],
+    valid_keys: &[&str],
+    default_normalized: &str,
+) -> Result<String> {
+    loop {
+        if !prompt.is_empty() {
+            print!("{}", prompt);
+            io::stdout().flush()?;
+        }
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim();
+
+        let selected = if trimmed.is_empty() {
+            default_normalized.to_string()
+        } else {
+            trimmed.to_lowercase()
+        };
+
+        if let Some(index) = normalized_keys.iter().position(|key| key == &selected) {
+            return Ok(valid_keys[index].to_string());
+        }
+
+        println!(
+            "Invalid selection. Please choose from: {}",
+            valid_keys.join(", ")
+        );
+    }
 }

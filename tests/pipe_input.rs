@@ -254,3 +254,99 @@ fn test_pipe_input_priority() {
         .success()
         .stdout(predicate::str::contains("test-repo-priority-test"));
 }
+
+#[cfg(unix)]
+#[test]
+fn test_create_open_with_codex_choice() {
+    let (temp_dir, repo_path, config_dir) = setup_test_repo();
+
+    // Prepare marker file and mock codex command
+    let bin_dir = temp_dir.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    let mark_path = temp_dir.path().join("codex-invoked.txt");
+
+    let codex_script = bin_dir.join("codex");
+    fs::write(
+        &codex_script,
+        "#!/bin/sh\necho codex > \"$XLAUDE_TEST_MARK_FILE\"\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&codex_script).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o755);
+    }
+    fs::set_permissions(&codex_script, perms).unwrap();
+
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let mut path_entries: Vec<std::path::PathBuf> = std::env::split_paths(&path_var).collect();
+    path_entries.insert(0, bin_dir.clone());
+    let new_path = std::env::join_paths(path_entries).unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xlaude"));
+    cmd.current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("PATH", &new_path)
+        .env("XLAUDE_TEST_MARK_FILE", &mark_path)
+        .args(["create", "test-codex-choice"])
+        .write_stdin("1\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("1. Open with `codex`"));
+
+    assert!(mark_path.exists(), "codex command should be executed");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_create_open_with_default_agent_choice() {
+    let (temp_dir, repo_path, config_dir) = setup_test_repo();
+
+    // Prepare mock commands and override agent to custom script
+    let bin_dir = temp_dir.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    let codex_script = bin_dir.join("codex");
+    fs::write(&codex_script, "#!/bin/sh\nexit 0\n").unwrap();
+    let agent_script = bin_dir.join("mock-agent");
+    let agent_mark = temp_dir.path().join("agent-invoked.txt");
+    fs::write(
+        &agent_script,
+        "#!/bin/sh\necho agent > \"$XLAUDE_AGENT_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    for script in [&codex_script, &agent_script] {
+        let mut perms = fs::metadata(script).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o755);
+        }
+        fs::set_permissions(script, perms).unwrap();
+    }
+
+    let state_path = std::path::Path::new(&config_dir).join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["agent"] = serde_json::Value::String("mock-agent".to_string());
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let mut path_entries: Vec<std::path::PathBuf> = std::env::split_paths(&path_var).collect();
+    path_entries.insert(0, bin_dir.clone());
+    let new_path = std::env::join_paths(path_entries).unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xlaude"));
+    cmd.current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("PATH", &new_path)
+        .env("XLAUDE_AGENT_MARK_FILE", &agent_mark)
+        .args(["create", "test-default-agent-choice"])
+        .write_stdin("2\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("2. Open with `mock-agent`"));
+
+    assert!(agent_mark.exists(), "default agent should be executed");
+}

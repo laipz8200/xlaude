@@ -6,8 +6,8 @@ use std::process::{Command, Stdio};
 use crate::git::{get_current_branch, get_repo_name, is_base_branch, is_in_worktree};
 use crate::input::{drain_stdin, get_command_arg, is_piped_input, smart_confirm, smart_select};
 use crate::state::{WorktreeInfo, XlaudeState};
-use crate::utils::resolve_agent_command;
 use crate::utils::sanitize_branch_name;
+use crate::utils::{resolve_agent_command, split_command_line};
 
 pub fn handle_open(name: Option<String>) -> Result<()> {
     let mut state = XlaudeState::load()?;
@@ -32,14 +32,14 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
             // Check if this worktree is already managed
             let key = XlaudeState::make_key(&repo_name, &worktree_name);
 
-            if state.worktrees.contains_key(&key) {
-                // Already managed, open directly
+            let worktree_info = if let Some(info) = state.worktrees.get(&key).cloned() {
                 println!(
                     "{} Opening current worktree '{}/{}'...",
                     "🚀".green(),
                     repo_name,
                     worktree_name.cyan()
                 );
+                info
             } else {
                 // Not managed, ask if user wants to add it
                 println!(
@@ -90,26 +90,16 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
                     repo_name,
                     worktree_name.cyan()
                 );
-            }
+                state.worktrees.get(&key).cloned().unwrap_or(WorktreeInfo {
+                    name: worktree_name,
+                    branch: current_branch,
+                    path: current_dir,
+                    repo_name,
+                    created_at: Utc::now(),
+                })
+            };
 
-            // Launch agent in current directory
-            let (program, args) = resolve_agent_command()?;
-            let mut cmd = Command::new(&program);
-            cmd.args(&args);
-
-            cmd.envs(std::env::vars());
-
-            // If there's piped input, drain it and don't pass to Claude
-            if is_piped_input() {
-                drain_stdin()?;
-                cmd.stdin(Stdio::null());
-            }
-
-            let status = cmd.status().context("Failed to launch agent")?;
-
-            if !status.success() {
-                anyhow::bail!("Agent exited with error");
-            }
+            spawn_agent(&worktree_info, AgentCommand::Default).context("Failed to launch agent")?;
 
             return Ok(());
         }
@@ -160,18 +150,52 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
         worktree_name.cyan()
     );
 
-    // Change to worktree directory and launch Claude
-    std::env::set_current_dir(&worktree_info.path).context("Failed to change directory")?;
+    spawn_agent(&worktree_info, AgentCommand::Default).context("Failed to launch agent")?;
 
-    // Resolve global agent command
-    let (program, args) = resolve_agent_command()?;
+    Ok(())
+}
+
+pub fn open_with_agent(name: &str, agent_command: &str) -> Result<()> {
+    let state = XlaudeState::load()?;
+
+    let (_key, worktree_info) = state
+        .worktrees
+        .iter()
+        .find(|(_, w)| w.name == name)
+        .map(|(k, w)| (k.clone(), w.clone()))
+        .context(format!("Worktree '{name}' not found"))?;
+
+    println!(
+        "{} Opening worktree '{}/{}'...",
+        "🚀".green(),
+        worktree_info.repo_name,
+        worktree_info.name.cyan()
+    );
+
+    spawn_agent(&worktree_info, AgentCommand::Override(agent_command))
+        .context("Failed to launch specified agent")?;
+
+    Ok(())
+}
+
+enum AgentCommand<'a> {
+    Default,
+    Override(&'a str),
+}
+
+fn spawn_agent(worktree: &WorktreeInfo, command: AgentCommand<'_>) -> Result<()> {
+    std::env::set_current_dir(&worktree.path).context("Failed to change directory")?;
+
+    let (program, args) = match command {
+        AgentCommand::Default => resolve_agent_command()?,
+        AgentCommand::Override(cmdline) => split_command_line(cmdline)?,
+    };
+
     let mut cmd = Command::new(&program);
     cmd.args(&args);
 
-    // Inherit all environment variables
     cmd.envs(std::env::vars());
 
-    // If there's piped input, drain it and don't pass to Claude
     if is_piped_input() {
         drain_stdin()?;
         cmd.stdin(Stdio::null());

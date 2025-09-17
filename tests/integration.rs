@@ -218,11 +218,11 @@ fn test_create_on_wrong_branch() {
         .output()
         .unwrap();
 
-    let output = ctx.xlaude(&["create", "test"]).assert().failure();
+    let output = ctx.xlaude(&["create", "test"]).assert().success();
 
-    let stderr = String::from_utf8_lossy(&output.get_output().stderr);
-    let redacted = ctx.redact_paths(&stderr);
-    assert_snapshot!(redacted);
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout);
+    assert!(stdout.contains("Creating worktree"));
+    assert!(stdout.contains("Worktree created"));
 }
 
 // List command tests
