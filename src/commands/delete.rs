@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 
-use crate::git::{execute_git, has_unpushed_commits, is_working_tree_clean};
+use crate::git::{execute_git, get_repo_name, has_unpushed_commits, is_working_tree_clean};
 use crate::input::{get_command_arg, smart_confirm};
 use crate::state::{WorktreeInfo, XlaudeState};
 use crate::utils::execute_in_dir;
@@ -101,13 +101,16 @@ fn find_worktree_to_delete(
     name: Option<String>,
 ) -> Result<(String, WorktreeInfo)> {
     if let Some(n) = name {
-        // Find worktree by name across all projects
+        let repo_name = get_repo_name().context(
+            "Failed to determine current repository; run this command inside a git repository",
+        )?;
+
         state
             .worktrees
             .iter()
-            .find(|(_, w)| w.name == n)
+            .find(|(_, w)| w.name == n && w.repo_name == repo_name)
             .map(|(k, w)| (k.clone(), w.clone()))
-            .context(format!("Worktree '{n}' not found"))
+            .with_context(|| format!("Worktree '{n}' not found in repository '{repo_name}'"))
     } else {
         // Find worktree by current directory
         find_current_worktree(state)
