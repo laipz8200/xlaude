@@ -8,7 +8,8 @@ xlaude 是一个用于管理 Claude 实例的命令行工具，通过 git worktr
 创建新的 worktree 和分支：
 - 可以在任何分支上执行
 - 如果不提供 name，自动从 BIP39 词库随机选择一个词
-- 创建新分支 `<name>`（基于当前分支）
+- 默认创建/复用分支 `<name>`（基于当前分支）
+- 使用 `-b/--branch <branch>` 可指定特殊分支：若存在则直接检出，否则会自动创建（CLI 基于当前分支，Dashboard 基于远程默认分支）
 - 创建 worktree 到 `../<repo-name>-<name>` 目录
 - **不会自动启动 Claude**
 
@@ -113,6 +114,9 @@ xlaude create feature-x  # 创建 ../opendal-feature-x 目录
 
 # 使用随机名称创建
 xlaude create  # 可能创建 ../opendal-dolphin 目录
+
+# 指定特殊分支名称
+xlaude create feature-x -b release/v1  # 使用 release/v1 分支
 
 # 打开并启动 Claude
 xlaude open feature-x  # 打开指定的 worktree

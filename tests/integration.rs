@@ -190,6 +190,69 @@ fn test_create_with_name() {
 }
 
 #[test]
+fn test_create_with_override_branch_creates_branch_when_missing() {
+    let ctx = TestContext::new("test-repo");
+
+    ctx.xlaude(&["create", "feature-x", "-b", "special-branch"])
+        .assert()
+        .success();
+
+    let state = ctx.read_state();
+    let key = "test-repo/feature-x";
+    let branch = state["worktrees"][key]["branch"].as_str().unwrap();
+    assert_eq!(branch, "special-branch");
+
+    let status = std::process::Command::new("git")
+        .args(["show-ref", "--verify", "refs/heads/special-branch"])
+        .current_dir(&ctx.repo_dir)
+        .status()
+        .unwrap();
+    assert!(status.success(), "branch was not created");
+}
+
+#[test]
+fn test_create_with_override_branch_reuses_existing_branch() {
+    let ctx = TestContext::new("test-repo");
+
+    std::process::Command::new("git")
+        .args(["checkout", "-b", "existing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&ctx.repo_dir)
+        .status()
+        .unwrap();
+
+    let before = std::process::Command::new("git")
+        .args(["rev-parse", "existing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .output()
+        .unwrap();
+
+    ctx.xlaude(&["create", "feature-y", "-b", "existing-branch"])
+        .assert()
+        .success();
+
+    let state = ctx.read_state();
+    let key = "test-repo/feature-y";
+    let branch = state["worktrees"][key]["branch"].as_str().unwrap();
+    assert_eq!(branch, "existing-branch");
+
+    let after = std::process::Command::new("git")
+        .args(["rev-parse", "existing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        before.stdout, after.stdout,
+        "existing branch reference changed"
+    );
+}
+
+#[test]
 fn test_create_random_name() {
     let ctx = TestContext::new("test-repo");
 

@@ -68,9 +68,15 @@ xlaude create
 
 # Create from existing branch (local or remote)
 xlaude create existing-branch
+
+# Use a different branch name than the worktree label
+xlaude create feature-auth -b release/1.2
+
+# Reuse an existing branch without matching the worktree name
+xlaude create frontend-refactor -b shared/frontend-cleanup
 ```
 
-This creates a new git worktree at `../<repo>-<name>`. If the branch doesn't exist, it creates a new one. If the branch already exists (locally or on remote), it creates the worktree from that existing branch. You can run this from any current branch.
+This creates a new git worktree at `../<repo>-<name>`. By default the worktree name determines the branch name; use `-b/--branch` to override it. When the branch is missing, xlaude creates it (tracking the current branch or the default remote branch, depending on context). If the branch already exists, it simply reuses it. You can run this from any current branch.
 
 ### Open an existing workspace
 
