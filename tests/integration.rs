@@ -208,6 +208,83 @@ fn test_create_random_name() {
     assert!(stdout.contains("Worktree created at"));
 }
 
+#[test]
+fn test_create_with_existing_branch_override() {
+    let ctx = TestContext::new("test-repo");
+
+    // Create an existing branch to reuse
+    std::process::Command::new("git")
+        .args(["branch", "existing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .output()
+        .unwrap();
+
+    let original_rev = std::process::Command::new("git")
+        .args(["rev-parse", "existing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .output()
+        .unwrap();
+    let original_rev = String::from_utf8_lossy(&original_rev.stdout)
+        .trim()
+        .to_string();
+
+    let output = ctx
+        .xlaude(&["create", "feature-existing", "-b", "existing-branch"])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout);
+    assert!(
+        stdout.contains(
+            "Creating worktree 'feature-existing' from existing branch 'existing-branch'"
+        )
+    );
+
+    assert!(ctx.worktree_exists("feature-existing"));
+
+    let state = ctx.read_state();
+    let worktree = &state["worktrees"]["test-repo/feature-existing"];
+    assert_eq!(worktree["branch"], "existing-branch");
+
+    let new_rev = std::process::Command::new("git")
+        .args(["rev-parse", "existing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .output()
+        .unwrap();
+    let new_rev = String::from_utf8_lossy(&new_rev.stdout).trim().to_string();
+
+    assert_eq!(original_rev, new_rev);
+}
+
+#[test]
+fn test_create_with_missing_branch_override_errors() {
+    let ctx = TestContext::new("test-repo");
+
+    let assert = ctx
+        .xlaude(&["create", "feature-missing", "-b", "missing-branch"])
+        .assert()
+        .failure();
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        stderr.contains("Branch 'missing-branch' does not exist"),
+        "stderr was: {stderr}"
+    );
+
+    assert!(!ctx.worktree_exists("feature-missing"));
+
+    let branch_output = std::process::Command::new("git")
+        .args(["branch", "--list", "missing-branch"])
+        .current_dir(&ctx.repo_dir)
+        .output()
+        .unwrap();
+    let branch_list = String::from_utf8_lossy(&branch_output.stdout);
+    assert!(
+        branch_list.trim().is_empty(),
+        "branch should not have been created"
+    );
+}
+
 // List command tests
 #[test]
 fn test_list_empty() {
