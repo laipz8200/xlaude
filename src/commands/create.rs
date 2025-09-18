@@ -13,18 +13,23 @@ use crate::input::get_command_arg;
 use crate::state::{WorktreeInfo, XlaudeState};
 use crate::utils::{generate_random_name, sanitize_branch_name};
 
-pub fn handle_create(name: Option<String>) -> Result<()> {
-    handle_create_in_dir(name, None)
+pub fn handle_create(name: Option<String>, branch_override: Option<String>) -> Result<()> {
+    handle_create_in_dir(name, branch_override, None)
 }
 
-pub fn handle_create_in_dir(name: Option<String>, repo_path: Option<PathBuf>) -> Result<()> {
-    handle_create_in_dir_quiet(name, repo_path, false)?;
+pub fn handle_create_in_dir(
+    name: Option<String>,
+    branch_override: Option<String>,
+    repo_path: Option<PathBuf>,
+) -> Result<()> {
+    handle_create_in_dir_quiet(name, branch_override, repo_path, false)?;
     Ok(())
 }
 
 // Create worktree quietly without prompting for open, returns the created worktree name
 pub fn handle_create_in_dir_quiet(
     name: Option<String>,
+    branch_override: Option<String>,
     repo_path: Option<PathBuf>,
     quiet: bool,
 ) -> Result<String> {
@@ -57,14 +62,27 @@ pub fn handle_create_in_dir_quiet(
         get_repo_name().context("Not in a git repository")?
     };
 
-    // Get name from CLI args or pipe, generate if not provided
-    let branch_name = match get_command_arg(name)? {
-        Some(n) => n,
-        None => generate_random_name()?,
+    // Determine worktree identifier and branch name based on provided arguments
+    let provided_name = get_command_arg(name)?;
+    let (raw_worktree_label, branch_name) = match (provided_name, branch_override) {
+        (Some(name), Some(branch)) => (name, branch),
+        (Some(name), None) => {
+            let branch = name.clone();
+            (name, branch)
+        }
+        (None, Some(branch)) => {
+            let label = branch.clone();
+            (label, branch)
+        }
+        (None, None) => {
+            let generated = generate_random_name()?;
+            let branch = generated.clone();
+            (generated, branch)
+        }
     };
 
-    // Sanitize the branch name for use in directory names
-    let worktree_name = sanitize_branch_name(&branch_name);
+    // Sanitize the worktree label for use in directory names
+    let worktree_name = sanitize_branch_name(&raw_worktree_label);
 
     // Check if a worktree with this name already exists in xlaude state
     let state = XlaudeState::load()?;

@@ -31,6 +31,9 @@ enum Commands {
     Create {
         /// Name for the worktree (random BIP39 word if not provided)
         name: Option<String>,
+        /// Override branch to use for the worktree (defaults to the worktree name)
+        #[arg(short = 'b', long = "branch")]
+        branch: Option<String>,
     },
     /// Open an existing worktree and launch Claude
     Open {
@@ -88,7 +91,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Create { name } => handle_create(name),
+        Commands::Create { name, branch } => handle_create(name, branch),
         Commands::Open { name } => handle_open(name),
         Commands::Delete { name } => handle_delete(name),
         Commands::Add { name } => handle_add(name),
