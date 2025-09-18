@@ -179,11 +179,33 @@ pub fn smart_choice(prompt: &str, valid_keys: &[&str], default_key: &str) -> Res
 
     if let Some(input) = read_piped_line()? {
         let trimmed = input.trim();
+
         if trimmed.is_empty() {
-            return Ok(default_key.to_string());
+            return Ok(valid_keys
+                .iter()
+                .find(|key| key.eq_ignore_ascii_case(default_key))
+                .unwrap()
+                .to_string());
         }
 
         let normalized = trimmed.to_lowercase();
+
+        let alias_key = match normalized.as_str() {
+            "y" | "yes" => Some("2"),
+            "n" | "no" => Some("n"),
+            _ => None,
+        }
+        .and_then(|alias| {
+            normalized_keys
+                .iter()
+                .position(|key| key == alias)
+                .map(|index| valid_keys[index].to_string())
+        });
+
+        if let Some(mapped) = alias_key {
+            return Ok(mapped);
+        }
+
         if let Some(index) = normalized_keys.iter().position(|key| key == &normalized) {
             return Ok(valid_keys[index].to_string());
         }

@@ -633,7 +633,7 @@ fn test_open_current_worktree_already_managed() {
     ctx.xlaude_in_dir(&worktree_dir, &["open"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("Opening current worktree"));
+        .stdout(predicates::str::contains("Opening worktree"));
 }
 
 #[test]

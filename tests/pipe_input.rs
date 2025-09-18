@@ -350,3 +350,226 @@ fn test_create_open_with_default_agent_choice() {
 
     assert!(agent_mark.exists(), "default agent should be executed");
 }
+
+#[cfg(unix)]
+#[test]
+fn test_open_with_codex_choice() {
+    let (temp_dir, repo_path, config_dir) = setup_test_repo();
+
+    // Prepare marker files and mock commands
+    let bin_dir = temp_dir.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    let codex_mark = temp_dir.path().join("codex-open-invoked.txt");
+    let agent_mark = temp_dir.path().join("agent-open-invoked.txt");
+
+    let codex_script = bin_dir.join("codex");
+    fs::write(
+        &codex_script,
+        "#!/bin/sh\necho codex > \"$XLAUDE_TEST_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    let agent_script = bin_dir.join("mock-agent");
+    fs::write(
+        &agent_script,
+        "#!/bin/sh\necho agent > \"$XLAUDE_AGENT_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    for script in [&codex_script, &agent_script] {
+        let mut perms = fs::metadata(script).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o755);
+        }
+        fs::set_permissions(script, perms).unwrap();
+    }
+
+    // Override default agent to our mock script
+    let state_path = std::path::Path::new(&config_dir).join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["agent"] = serde_json::Value::String("mock-agent".to_string());
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    // Create worktree without triggering auto-open prompt
+    Command::new(env!("CARGO_BIN_EXE_xlaude"))
+        .current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("XLAUDE_NO_AUTO_OPEN", "1")
+        .args(["create", "open-codex-choice"])
+        .assert()
+        .success();
+
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let mut path_entries: Vec<std::path::PathBuf> = std::env::split_paths(&path_var).collect();
+    path_entries.insert(0, bin_dir.clone());
+    let new_path = std::env::join_paths(path_entries).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xlaude"));
+    cmd.current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("PATH", &new_path)
+        .env("XLAUDE_TEST_MARK_FILE", &codex_mark)
+        .env("XLAUDE_AGENT_MARK_FILE", &agent_mark)
+        .args(["open", "open-codex-choice"])
+        .write_stdin("1\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("1. Open with `codex`"));
+
+    assert!(codex_mark.exists(), "codex command should be executed");
+    assert!(!agent_mark.exists(), "default agent should not be executed");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_open_with_default_agent_choice() {
+    let (temp_dir, repo_path, config_dir) = setup_test_repo();
+
+    // Prepare marker files and mock commands
+    let bin_dir = temp_dir.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    let codex_mark = temp_dir.path().join("codex-open-invoked.txt");
+    let agent_mark = temp_dir.path().join("agent-open-invoked.txt");
+
+    let codex_script = bin_dir.join("codex");
+    fs::write(
+        &codex_script,
+        "#!/bin/sh\necho codex > \"$XLAUDE_TEST_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    let agent_script = bin_dir.join("mock-agent");
+    fs::write(
+        &agent_script,
+        "#!/bin/sh\necho agent > \"$XLAUDE_AGENT_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    for script in [&codex_script, &agent_script] {
+        let mut perms = fs::metadata(script).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o755);
+        }
+        fs::set_permissions(script, perms).unwrap();
+    }
+
+    // Override default agent to our mock script
+    let state_path = std::path::Path::new(&config_dir).join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["agent"] = serde_json::Value::String("mock-agent".to_string());
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    Command::new(env!("CARGO_BIN_EXE_xlaude"))
+        .current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("XLAUDE_NO_AUTO_OPEN", "1")
+        .args(["create", "open-default-agent-choice"])
+        .assert()
+        .success();
+
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let mut path_entries: Vec<std::path::PathBuf> = std::env::split_paths(&path_var).collect();
+    path_entries.insert(0, bin_dir.clone());
+    let new_path = std::env::join_paths(path_entries).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xlaude"));
+    cmd.current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("PATH", &new_path)
+        .env("XLAUDE_TEST_MARK_FILE", &codex_mark)
+        .env("XLAUDE_AGENT_MARK_FILE", &agent_mark)
+        .args(["open", "open-default-agent-choice"])
+        .write_stdin("2\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("2. Open with `mock-agent`"));
+
+    assert!(agent_mark.exists(), "default agent should be executed");
+    assert!(!codex_mark.exists(), "codex command should not be executed");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_open_skip_choice() {
+    let (temp_dir, repo_path, config_dir) = setup_test_repo();
+
+    // Prepare marker files and mock commands
+    let bin_dir = temp_dir.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    let codex_mark = temp_dir.path().join("codex-open-invoked.txt");
+    let agent_mark = temp_dir.path().join("agent-open-invoked.txt");
+
+    let codex_script = bin_dir.join("codex");
+    fs::write(
+        &codex_script,
+        "#!/bin/sh\necho codex > \"$XLAUDE_TEST_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    let agent_script = bin_dir.join("mock-agent");
+    fs::write(
+        &agent_script,
+        "#!/bin/sh\necho agent > \"$XLAUDE_AGENT_MARK_FILE\"\n",
+    )
+    .unwrap();
+
+    for script in [&codex_script, &agent_script] {
+        let mut perms = fs::metadata(script).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o755);
+        }
+        fs::set_permissions(script, perms).unwrap();
+    }
+
+    // Override default agent to our mock script
+    let state_path = std::path::Path::new(&config_dir).join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["agent"] = serde_json::Value::String("mock-agent".to_string());
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    Command::new(env!("CARGO_BIN_EXE_xlaude"))
+        .current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("XLAUDE_NO_AUTO_OPEN", "1")
+        .args(["create", "open-skip-choice"])
+        .assert()
+        .success();
+
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let mut path_entries: Vec<std::path::PathBuf> = std::env::split_paths(&path_var).collect();
+    path_entries.insert(0, bin_dir.clone());
+    let new_path = std::env::join_paths(path_entries).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xlaude"));
+    cmd.current_dir(&repo_path)
+        .env("XLAUDE_CONFIG_DIR", &config_dir)
+        .env("PATH", &new_path)
+        .env("XLAUDE_TEST_MARK_FILE", &codex_mark)
+        .env("XLAUDE_AGENT_MARK_FILE", &agent_mark)
+        .args(["open", "open-skip-choice"])
+        .write_stdin("n\n");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("n. Don't open."));
+
+    assert!(
+        !agent_mark.exists(),
+        "default agent should not be executed when skipping"
+    );
+    assert!(
+        !codex_mark.exists(),
+        "codex should not be executed when skipping"
+    );
+}

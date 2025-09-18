@@ -3,9 +3,10 @@ use chrono::Utc;
 use colored::Colorize;
 use std::process::{Command, Stdio};
 
+use crate::commands::agent_prompt::{AgentSelection, prompt_agent_selection};
 use crate::git::{get_current_branch, get_repo_name, is_base_branch, is_in_worktree};
 use crate::input::{drain_stdin, get_command_arg, is_piped_input, smart_confirm, smart_select};
-use crate::state::{WorktreeInfo, XlaudeState};
+use crate::state::{WorktreeInfo, XlaudeState, get_default_agent};
 use crate::utils::sanitize_branch_name;
 use crate::utils::{resolve_agent_command, split_command_line};
 
@@ -33,12 +34,6 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
             let key = XlaudeState::make_key(&repo_name, &worktree_name);
 
             let worktree_info = if let Some(info) = state.worktrees.get(&key).cloned() {
-                println!(
-                    "{} Opening current worktree '{}/{}'...",
-                    "🚀".green(),
-                    repo_name,
-                    worktree_name.cyan()
-                );
                 info
             } else {
                 // Not managed, ask if user wants to add it
@@ -84,12 +79,6 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
                 state.save()?;
 
                 println!("{} Worktree added successfully", "✅".green());
-                println!(
-                    "{} Opening worktree '{}/{}'...",
-                    "🚀".green(),
-                    repo_name,
-                    worktree_name.cyan()
-                );
                 state.worktrees.get(&key).cloned().unwrap_or(WorktreeInfo {
                     name: worktree_name,
                     branch: current_branch,
@@ -99,7 +88,12 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
                 })
             };
 
-            spawn_agent(&worktree_info, AgentCommand::Default).context("Failed to launch agent")?;
+            launch_with_menu(
+                &state,
+                &worktree_info,
+                "Select an agent to open the current worktree with:",
+            )
+            .context("Failed to launch agent")?;
 
             return Ok(());
         }
@@ -141,16 +135,12 @@ pub fn handle_open(name: Option<String>) -> Result<()> {
         }
     };
 
-    let worktree_name = &worktree_info.name;
-
-    println!(
-        "{} Opening worktree '{}/{}'...",
-        "🚀".green(),
-        worktree_info.repo_name,
-        worktree_name.cyan()
-    );
-
-    spawn_agent(&worktree_info, AgentCommand::Default).context("Failed to launch agent")?;
+    launch_with_menu(
+        &state,
+        &worktree_info,
+        "Select an agent to open the worktree with:",
+    )
+    .context("Failed to launch agent")?;
 
     Ok(())
 }
@@ -176,6 +166,42 @@ pub fn open_with_agent(name: &str, agent_command: &str) -> Result<()> {
         .context("Failed to launch specified agent")?;
 
     Ok(())
+}
+
+fn launch_with_menu(state: &XlaudeState, worktree: &WorktreeInfo, prompt: &str) -> Result<()> {
+    let agent_display = state.agent.clone().unwrap_or_else(get_default_agent);
+
+    let selection = prompt_agent_selection(prompt, &agent_display, AgentSelection::DefaultAgent)?;
+
+    match selection {
+        AgentSelection::Codex => {
+            print_opening_message(worktree, "codex");
+            spawn_agent(worktree, AgentCommand::Override("codex"))
+        }
+        AgentSelection::DefaultAgent => {
+            print_opening_message(worktree, &agent_display);
+            spawn_agent(worktree, AgentCommand::Default)
+        }
+        AgentSelection::Skip => {
+            println!(
+                "{} Skipping launch for '{}/{}'.",
+                "⏭️".yellow(),
+                worktree.repo_name,
+                worktree.name.cyan()
+            );
+            Ok(())
+        }
+    }
+}
+
+fn print_opening_message(worktree: &WorktreeInfo, agent: &str) {
+    println!(
+        "{} Opening worktree '{}/{}' with `{}`...",
+        "🚀".green(),
+        worktree.repo_name,
+        worktree.name.cyan(),
+        agent.cyan()
+    );
 }
 
 enum AgentCommand<'a> {

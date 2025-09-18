@@ -4,11 +4,12 @@ use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::commands::open::{handle_open, open_with_agent};
+use crate::commands::agent_prompt::{AgentSelection, prompt_agent_selection};
+use crate::commands::open::open_with_agent;
 use crate::git::{
     execute_git, extract_repo_name_from_url, get_repo_name, list_worktrees, update_submodules,
 };
-use crate::input::{get_command_arg, smart_choice};
+use crate::input::get_command_arg;
 use crate::state::{WorktreeInfo, XlaudeState, get_default_agent};
 use crate::utils::{generate_random_name, sanitize_branch_name};
 
@@ -256,16 +257,20 @@ pub fn handle_create_in_dir_quiet(
                 worktree_name.cyan()
             );
         } else {
-            let agent_display = state.agent.clone().unwrap_or_else(get_default_agent);
+            let agent_command = state.agent.clone().unwrap_or_else(get_default_agent);
 
-            match prompt_open_decision(&agent_display)? {
-                OpenDecision::Codex => {
+            match prompt_agent_selection(
+                "Would you like to open the worktree now?",
+                &agent_command,
+                AgentSelection::Skip,
+            )? {
+                AgentSelection::Codex => {
                     open_with_agent(&worktree_name, "codex")?;
                 }
-                OpenDecision::DefaultAgent => {
-                    handle_open(Some(worktree_name.clone()))?;
+                AgentSelection::DefaultAgent => {
+                    open_with_agent(&worktree_name, &agent_command)?;
                 }
-                OpenDecision::Skip => {
+                AgentSelection::Skip => {
                     if std::env::var("XLAUDE_NON_INTERACTIVE").is_err() {
                         println!(
                             "  {} To open it later, run: {} {}",
@@ -280,25 +285,4 @@ pub fn handle_create_in_dir_quiet(
     }
 
     Ok(worktree_name)
-}
-
-#[derive(Clone, Copy)]
-enum OpenDecision {
-    Codex,
-    DefaultAgent,
-    Skip,
-}
-
-fn prompt_open_decision(agent_display: &str) -> Result<OpenDecision> {
-    println!("Would you like to open the worktree now?");
-    println!("1. Open with `codex`.");
-    println!("2. Open with `{}`.", agent_display);
-    println!("n. Don't open.");
-
-    let choice = smart_choice("> ", &["1", "2", "n"], "n")?;
-    match choice.as_str() {
-        "1" => Ok(OpenDecision::Codex),
-        "2" => Ok(OpenDecision::DefaultAgent),
-        _ => Ok(OpenDecision::Skip),
-    }
 }
