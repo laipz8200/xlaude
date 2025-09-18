@@ -383,6 +383,73 @@ fn test_delete_current_worktree() {
     assert!(stdout.contains("Checking worktree") || stdout.contains("deleted"));
 }
 
+#[test]
+fn test_delete_requires_matching_repo() {
+    let ctx = TestContext::new("test-repo");
+
+    let other_repo = ctx.temp_dir.path().join("other-repo");
+    TestContext::init_test_repo(&other_repo);
+
+    ctx.xlaude_in_dir(&other_repo, &["create", "shared"])
+        .assert()
+        .success();
+
+    let output = ctx.xlaude(&["delete", "shared"]).assert().failure();
+    let stderr = String::from_utf8_lossy(&output.get_output().stderr);
+    assert!(stderr.contains("Worktree 'shared' not found"));
+
+    assert!(ctx.temp_dir.path().join("other-repo-shared").exists());
+
+    let state = ctx.read_state();
+    let worktrees = state["worktrees"].as_object().unwrap();
+    assert_eq!(worktrees.len(), 1);
+    assert!(worktrees.contains_key("other-repo/shared"));
+}
+
+#[test]
+fn test_delete_by_name_only_removes_current_repo() {
+    let ctx = TestContext::new("test-repo");
+
+    let other_repo = ctx.temp_dir.path().join("other-repo");
+    TestContext::init_test_repo(&other_repo);
+
+    ctx.xlaude(&["create", "shared"]).assert().success();
+    ctx.xlaude_in_dir(&other_repo, &["create", "shared"])
+        .assert()
+        .success();
+
+    ctx.xlaude(&["delete", "shared"]).assert().success();
+
+    assert!(!ctx.worktree_exists("shared"));
+    assert!(ctx.temp_dir.path().join("other-repo-shared").exists());
+
+    let state = ctx.read_state();
+    let worktrees = state["worktrees"].as_object().unwrap();
+    assert_eq!(worktrees.len(), 1);
+    assert!(worktrees.contains_key("other-repo/shared"));
+    assert!(!worktrees.contains_key("test-repo/shared"));
+}
+
+#[test]
+fn test_delete_requires_git_repository_context() {
+    let ctx = TestContext::new("test-repo");
+
+    ctx.xlaude(&["create", "floating"]).assert().success();
+
+    let output = ctx
+        .xlaude_in_dir(ctx.temp_dir.path(), &["delete", "floating"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&output.get_output().stderr);
+    assert!(stderr.contains("Failed to determine current repository"));
+
+    assert!(ctx.worktree_exists("floating"));
+
+    let state = ctx.read_state();
+    let worktrees = state["worktrees"].as_object().unwrap();
+    assert!(worktrees.contains_key("test-repo/floating"));
+}
+
 // Add command tests
 #[test]
 fn test_add_existing_worktree() {
