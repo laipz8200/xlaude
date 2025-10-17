@@ -58,11 +58,11 @@ where
 /// Resolve agent command from state or default, and split into program + args.
 pub fn resolve_agent_command() -> Result<(String, Vec<String>)> {
     let state = crate::state::XlaudeState::load()?;
-    let cmdline = state
+    let raw = state
         .agent
         .clone()
         .unwrap_or_else(crate::state::get_default_agent);
-
+    let cmdline = normalize_agent_command(&raw);
     split_command_line(&cmdline)
 }
 
@@ -78,4 +78,19 @@ pub fn split_command_line(cmdline: &str) -> Result<(String, Vec<String>)> {
     let program = parts[0].clone();
     let args = parts[1..].to_vec();
     Ok((program, args))
+}
+
+/// Normalize common agent aliases to full commands.
+/// - "claude"  -> "claude --dangerously-skip-permissions"
+/// - "gemini"  -> "gemini -y"
+/// - others are returned unchanged.
+pub fn normalize_agent_command(cmd: &str) -> String {
+    let trimmed = cmd.trim();
+    if trimmed.eq_ignore_ascii_case("claude") {
+        return crate::state::get_default_agent();
+    }
+    if trimmed.eq_ignore_ascii_case("gemini") {
+        return "gemini -y".to_string();
+    }
+    trimmed.to_string()
 }

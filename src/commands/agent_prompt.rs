@@ -7,6 +7,7 @@ use crate::input::smart_choice_with_formatter;
 pub enum AgentSelection {
     Codex,
     Claude,
+    Gemini,
     Skip,
 }
 
@@ -15,6 +16,7 @@ impl AgentSelection {
         match self {
             AgentSelection::Codex => "1",
             AgentSelection::Claude => "2",
+            AgentSelection::Gemini => "3",
             AgentSelection::Skip => "n",
         }
     }
@@ -23,6 +25,7 @@ impl AgentSelection {
         match key {
             "1" => Some(AgentSelection::Codex),
             "2" => Some(AgentSelection::Claude),
+            "3" => Some(AgentSelection::Gemini),
             "n" | "N" => Some(AgentSelection::Skip),
             _ => None,
         }
@@ -37,7 +40,7 @@ struct AgentMenuOption {
     confirmation: &'static str,
 }
 
-const AGENT_MENU_OPTIONS: [AgentMenuOption; 3] = [
+const AGENT_MENU_OPTIONS: [AgentMenuOption; 4] = [
     AgentMenuOption {
         selection: AgentSelection::Codex,
         title: "Open with codex",
@@ -51,6 +54,13 @@ const AGENT_MENU_OPTIONS: [AgentMenuOption; 3] = [
         command: "claude --dangerously-skip-permissions",
         description: "Launch using the configured Claude command.",
         confirmation: "Launching with `claude --dangerously-skip-permissions`",
+    },
+    AgentMenuOption {
+        selection: AgentSelection::Gemini,
+        title: "Open with Gemini",
+        command: "gemini -y",
+        description: "Open the worktree in the Gemini CLI.",
+        confirmation: "Launching with `gemini -y`",
     },
     AgentMenuOption {
         selection: AgentSelection::Skip,
@@ -111,15 +121,16 @@ pub fn prompt_agent_selection(
 
     println!();
     println!(
-        "  Press {}, {} or {}; Enter accepts the default.",
+        "  Press {}, {}, {} or {}; Enter accepts the default.",
         "[1]".bright_black(),
         "[2]".bright_black(),
+        "[3]".bright_black(),
         "[N]".bright_black()
     );
     println!();
 
     let prompt_indicator = format!("{} ", "›".bright_black());
-    let valid_keys = ["1", "2", "n"];
+    let valid_keys = ["1", "2", "3", "n"];
 
     let choice = smart_choice_with_formatter(
         &prompt_indicator,
@@ -133,7 +144,7 @@ pub fn prompt_agent_selection(
                 .expect("missing agent option");
 
             match selection {
-                AgentSelection::Codex | AgentSelection::Claude => {
+                AgentSelection::Codex | AgentSelection::Claude | AgentSelection::Gemini => {
                     format!("{} {}", "✔".green(), option.confirmation.cyan())
                 }
                 AgentSelection::Skip => format!("{} {}", "⏭".yellow(), option.confirmation),
@@ -157,6 +168,10 @@ mod tests {
         assert_eq!(
             AgentSelection::from_key(AgentSelection::Claude.as_key()),
             Some(AgentSelection::Claude)
+        );
+        assert_eq!(
+            AgentSelection::from_key(AgentSelection::Gemini.as_key()),
+            Some(AgentSelection::Gemini)
         );
         assert_eq!(
             AgentSelection::from_key(AgentSelection::Skip.as_key()),

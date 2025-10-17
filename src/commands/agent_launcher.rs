@@ -39,6 +39,15 @@ pub fn launch_with_menu(worktree: &WorktreeInfo, prompt: &str) -> Result<AgentSe
             spawn_agent(worktree, AgentCommand::Override(&command_to_run))?;
             Ok(AgentSelection::Claude)
         }
+        AgentSelection::Gemini => {
+            let command_to_run = "gemini -y".to_string();
+            print_opening_message(worktree, &command_to_run);
+            if std::env::var("XLAUDE_TEST_MODE").is_ok() {
+                return Ok(AgentSelection::Gemini);
+            }
+            spawn_agent(worktree, AgentCommand::Override(&command_to_run))?;
+            Ok(AgentSelection::Gemini)
+        }
         AgentSelection::Skip => {
             println!(
                 "{} Skipping launch for '{}/{}'.",
@@ -107,9 +116,15 @@ fn default_agent_selection_from_config(agent_config: Option<&str>) -> AgentSelec
         return AgentSelection::Claude;
     }
 
+    if config.eq_ignore_ascii_case("gemini") {
+        return AgentSelection::Gemini;
+    }
+
     let normalized = config.to_ascii_lowercase();
     if normalized.starts_with("codex") {
         AgentSelection::Codex
+    } else if normalized.starts_with("gemini") {
+        AgentSelection::Gemini
     } else {
         AgentSelection::Claude
     }
@@ -157,6 +172,22 @@ mod tests {
         assert_eq!(
             default_agent_selection_from_config(Some("true")),
             AgentSelection::Claude
+        );
+    }
+
+    #[test]
+    fn gemini_config_sets_gemini_default() {
+        assert_eq!(
+            default_agent_selection_from_config(Some("gemini")),
+            AgentSelection::Gemini
+        );
+    }
+
+    #[test]
+    fn gemini_with_flags_defaults_to_gemini() {
+        assert_eq!(
+            default_agent_selection_from_config(Some("gemini -y")),
+            AgentSelection::Gemini
         );
     }
 }
